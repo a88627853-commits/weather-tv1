@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>POLAND WEATHER TV</title>
+
+<style>
+body{
+margin:0;
+background:black;
+color:white;
+font-family:Arial;
+overflow:hidden;
+transition:0.3s;
+}
+
+/* TOP BAR */
+#topbar{
+position:fixed;
+top:0;
+left:0;
+width:100%;
+background:#000;
+color:cyan;
+padding:8px;
+font-weight:bold;
+z-index:10;
+}
+
+/* MAIN SCREEN */
+#screen{
+padding:50px 20px 40px 20px;
+font-size:16px;
+}
+
+/* CITY ROW */
+.city{
+padding:6px;
+border-bottom:1px solid #222;
+display:flex;
+justify-content:space-between;
+}
+
+/* NEWS TICKER */
+#ticker{
+position:fixed;
+bottom:0;
+left:0;
+width:100%;
+background:#111;
+color:yellow;
+padding:6px;
+font-size:14px;
+white-space:nowrap;
+overflow:hidden;
+border-top:1px solid #333;
+}
+
+/* ANIMATED ALERT */
+.flash{
+animation: flash 0.4s infinite;
+}
+
+@keyframes flash{
+0%{background:black;}
+50%{background:darkred;}
+100%{background:black;}
+}
+
+/* FULLSCREEN MODE */
+.fullscreen-btn{
+position:fixed;
+right:10px;
+top:10px;
+background:#222;
+color:white;
+padding:6px;
+cursor:pointer;
+z-index:20;
+}
+</style>
+</head>
+
+<body>
+
+<div id="topbar">📺 POLAND WEATHER TV | LIVE BROADCAST</div>
+<div id="screen"></div>
+<div id="ticker">LOADING WEATHER DATA...</div>
+
+<div class="fullscreen-btn" onclick="goFull()">FULLSCREEN</div>
+
+<script>
+
+let lastSpeak = "";
+let alertMode = false;
+
+/* 🔊 TTS */
+function speak(text){
+  if(text === lastSpeak) return;
+  lastSpeak = text;
+
+  let u = new SpeechSynthesisUtterance(text);
+  u.lang = "pl-PL";
+  u.rate = 0.95;
+
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+/* 🔊 EAS SOUND */
+function playEAS(){
+  let ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+  let o1 = ctx.createOscillator();
+  let o2 = ctx.createOscillator();
+  let g = ctx.createGain();
+
+  o1.frequency.value = 853;
+  o2.frequency.value = 960;
+
+  g.gain.value = 0.07;
+
+  o1.connect(g);
+  o2.connect(g);
+  g.connect(ctx.destination);
+
+  o1.start();
+  o2.start();
+
+  setTimeout(() => {
+    o1.stop();
+    o2.stop();
+    ctx.close();
+  }, 1200);
+}
+
+/* 📺 RENDER TV */
+function render(data){
+
+  let html = "";
+  let alert = false;
+
+  data.cities.forEach(c => {
+
+    html += `
+      <div class="city">
+        <div>${c.name}</div>
+        <div>🌡 ${Math.round(c.weather.temperature_2m)}°C</div>
+        <div>💨 ${Math.round(c.weather.wind_speed_10m)} m/s</div>
+        <div>⚠ ${c.eas}</div>
+      </div>
+    `;
+
+    if(c.eas === "HIGH" || c.eas === "EXTREME"){
+      alert = true;
+    }
+  });
+
+  document.getElementById("screen").innerHTML = html;
+
+  /* 🔴 ALERT MODE */
+  if(alert){
+    document.body.classList.add("flash");
+    document.getElementById("ticker").innerText =
+      "⚠ BREAKING WEATHER ALERT - SEVERE CONDITIONS IN POLAND";
+
+    if(!alertMode){
+      playEAS();
+      speak("ALERT METEOROLOGICZNY. SYSTEM EMERGENCY ACTIVE.");
+      alertMode = true;
+    }
+
+  } else {
+    document.body.classList.remove("flash");
+    document.getElementById("ticker").innerText =
+      "POLAND WEATHER TV - LIVE WEATHER BROADCAST";
+    alertMode = false;
+  }
+
+  /* 🗣 voice */
+  if(data.cities.length > 0){
+    speak(
+      data.cities[0].name +
+      " temperatura " +
+      Math.round(data.cities[0].weather.temperature_2m) +
+      " stopni. alert " +
+      data.cities[0].eas
+    );
+  }
+}
+
+/* 📡 LOAD */
+async function load(){
+  try {
+    let res = await fetch("http://192.168.100.239:5000/data");
+    let data = await res.json();
+    render(data);
+  } catch(e){
+    console.log("API ERROR", e);
+  }
+}
+
+setInterval(load, 5000);
+load();
+
+/* 🖥 FULLSCREEN */
+function goFull(){
+  document.documentElement.requestFullscreen();
+}
+
+</script>
+
+</body>
+</html>
