@@ -1,1 +1,190 @@
-templates/index.html
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Weather TV</title>
+
+<style>
+body {
+    margin: 0;
+    background: black;
+    color: white;
+    font-family: Arial;
+    overflow: hidden;
+}
+
+#tv {
+    width: 960px;
+    height: 960px;
+    margin: auto;
+    background: #111;
+    padding: 10px;
+    overflow: hidden;
+}
+
+.city {
+    padding: 4px;
+    font-size: 14px;
+    border-bottom: 1px solid #222;
+}
+
+#ticker {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background: black;
+    color: lime;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+#ticker span {
+    display: inline-block;
+    padding-left: 100%;
+    animation: scroll 25s linear infinite;
+}
+
+@keyframes scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
+
+#eas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: red;
+    color: white;
+    font-size: 40px;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 9999;
+}
+
+button {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+}
+</style>
+</head>
+
+<body>
+
+<button onclick="document.documentElement.requestFullscreen()">FULLSCREEN</button>
+
+<div id="tv"></div>
+
+<div id="ticker"><span>ŁADOWANIE DANYCH POGODOWYCH...</span></div>
+
+<div id="eas"></div>
+
+<script>
+
+function speakQueue(lines, i = 0) {
+    if (i >= lines.length) return;
+
+    let msg = new SpeechSynthesisUtterance(lines[i]);
+    msg.lang = "pl-PL";
+    msg.rate = 1;
+
+    msg.onend = () => {
+        setTimeout(() => speakQueue(lines, i + 1), 400);
+    };
+
+    speechSynthesis.speak(msg);
+}
+
+function showEAS(text) {
+    let e = document.getElementById("eas");
+    e.style.display = "flex";
+    e.innerText = text;
+
+    let msg = new SpeechSynthesisUtterance(text);
+    msg.lang = "pl-PL";
+    speechSynthesis.speak(msg);
+
+    setTimeout(() => e.style.display = "none", 8000);
+}
+
+function checkEAS(data) {
+    let msg = "";
+
+    for (let c of data.cities) {
+        let cur = c.current || {};
+        let h = c.hourly || {};
+
+        let wind = h.wind_speed_10m?.[0] ?? 0;
+        let rain = h.precipitation_probability?.[0] ?? 0;
+        let code = cur.weather_code ?? 0;
+
+        if (code >= 95) msg = "⛈ ALERT BURZOWY NAD POLSKĄ";
+        if (wind > 20) msg = "🌪 SILNY WIATR - ALERT";
+        if (rain > 70) msg = "🌧 INTENSYWNE OPADY - ALERT";
+    }
+
+    if (msg) showEAS(msg);
+}
+
+function buildTTS(data) {
+    let lines = [];
+
+    data.cities.forEach(c => {
+        let cur = c.current || {};
+        let h = c.hourly || {};
+
+        lines.push(
+`${c.name}. 
+Temperatura ${cur.temperature_2m ?? "brak"} stopni. 
+Wilgotność ${cur.relative_humidity_2m ?? "brak"} procent. 
+Odczuwalna ${cur.apparent_temperature ?? "brak"}. 
+Wiatr ${h.wind_speed_10m?.[0] ?? 0} metrów na sekundę. 
+Zachmurzenie ${cur.cloud_cover ?? 0} procent. 
+Ciśnienie ${cur.pressure_msl ?? "brak"}. 
+Widoczność ${cur.visibility ?? "brak"}. 
+Dzień/Noc ${cur.is_day ? "dzień" : "noc"}.`
+        );
+    });
+
+    return lines;
+}
+
+function load() {
+    fetch("/data")
+        .then(r => r.json())
+        .then(d => {
+
+            checkEAS(d);
+
+            // ticker
+            document.querySelector("#ticker span").innerText =
+                d.cities.map(c =>
+                    `${c.name}: ${c.current?.temperature_2m ?? "?"}°C`
+                ).join(" | ");
+
+            // UI lista
+            document.getElementById("tv").innerHTML =
+                d.cities.map(c =>
+                    `<div class="city">
+                        ${c.name} → ${c.current?.temperature_2m ?? "?"}°C | 
+                        Wiatr ${c.hourly?.wind_speed_10m?.[0] ?? 0}
+                    </div>`
+                ).join("");
+
+            // TTS
+            speakQueue(buildTTS(d));
+        });
+}
+
+setInterval(load, 120000);
+load();
+
+</script>
+
+</body>
+</html>
