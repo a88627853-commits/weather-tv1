@@ -9,7 +9,7 @@ body {
     margin: 0;
     background: black;
     color: white;
-    font-family: Arial, sans-serif;
+    font-family: Arial;
     overflow: hidden;
 }
 
@@ -17,20 +17,25 @@ body {
     width: 960px;
     height: 960px;
     margin: auto;
-    background: #111;
-    padding: 10px;
-    overflow: hidden;
-}
-
-.city {
-    font-size: 14px;
-    padding: 3px;
-    border-bottom: 1px solid #222;
+    position: relative;
 }
 
 #map {
-    text-align: center;
-    margin-top: 10px;
+    width: 960px;
+    height: 960px;
+    position: relative;
+}
+
+#map img {
+    width: 100%;
+    height: 100%;
+}
+
+.city-dot {
+    position: absolute;
+    color: red;
+    font-size: 10px;
+    transform: translate(-50%, -50%);
 }
 
 #ticker {
@@ -40,7 +45,6 @@ body {
     background: black;
     color: lime;
     white-space: nowrap;
-    overflow: hidden;
 }
 
 #ticker span {
@@ -56,25 +60,32 @@ body {
 
 #eas {
     position: fixed;
-    top: 0;
-    left: 0;
     width: 100%;
+    height: 100%;
     background: red;
-    color: white;
-    font-size: 40px;
     display: none;
     justify-content: center;
     align-items: center;
-    height: 100%;
+    font-size: 40px;
     z-index: 9999;
-    text-align: center;
 }
+
+.weatherFX {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    opacity: 0.35;
+}
+
+.rain { background: url("https://i.imgur.com/4M7IWwP.gif"); }
+.snow { background: url("https://i.imgur.com/r4Q5Q0y.gif"); }
+.storm { background: url("https://i.imgur.com/3ZQZQ0v.gif"); }
 
 button {
     position: fixed;
     top: 10px;
     right: 10px;
-    z-index: 10;
 }
 </style>
 </head>
@@ -83,120 +94,153 @@ button {
 
 <button onclick="document.documentElement.requestFullscreen()">FULLSCREEN</button>
 
-<div id="tv"></div>
+<div id="tv">
 
-<div id="map">
-    <img src="/map.png" width="960">
+    <div id="map">
+        <img src="/map.png">
+        <div id="dots"></div>
+    </div>
+
 </div>
 
-<div id="ticker">
-    <span>ŁADOWANIE DANYCH...</span>
-</div>
-
+<div id="ticker"><span>LOADING...</span></div>
 <div id="eas"></div>
+<div class="weatherFX" id="fx"></div>
 
 <script>
 
-function speakQueue(lines, i = 0) {
-    if (i >= lines.length) {
-        setTimeout(() => {
-            speakQueue(lines, 0);
-        }, 10000); // 🔥 restart po 10 sekundach
-        return;
-    }
+/* ---------------- TTS ---------------- */
 
-    let msg = new SpeechSynthesisUtterance(lines[i]);
-    msg.lang = "pl-PL";
-    msg.rate = 1;
+function speakCity(city, cb) {
 
-    msg.onend = () => {
-        setTimeout(() => speakQueue(lines, i + 1), 400);
-    };
+    let c = city.current || {};
+    let h = city.hourly || {};
+    let d = city.daily || {};
 
-    speechSynthesis.speak(msg);
-}
+    let text =
+`${city.name}.
+Raport pogodowy.
 
-function showEAS(text) {
-    let e = document.getElementById("eas");
-    e.style.display = "flex";
-    e.innerText = text;
+Temperatura ${c.temperature_2m}.
+Wilgotność ${c.relative_humidity_2m}.
+Odczuwalna ${c.apparent_temperature}.
+
+Wiatr ${h.wind_speed_10m?.[0]} m/s, porywy ${h.wind_gusts_10m?.[0]}.
+Kierunek ${h.wind_direction_10m?.[0]} stopni.
+
+Opady ${h.precipitation?.[0]} mm, prawdopodobieństwo ${h.precipitation_probability?.[0]}%.
+
+Śnieg ${h.snow_depth?.[0]}.
+Widoczność ${h.visibility?.[0]}.
+
+Zachmurzenie ${c.cloud_cover}.
+Ciśnienie ${c.pressure_msl}.
+
+UV ${h.uv_index?.[0]}.
+UV clear sky ${h.uv_index_clear_sky?.[0]}.
+
+Nasłonecznienie ${h.sunshine_duration?.[0]}.
+
+Dziennie:
+Max ${d.temperature_2m_max?.[0]}.
+Min ${d.temperature_2m_min?.[0]}.
+
+Wschód i zachód słońca zapisane.`;
 
     let msg = new SpeechSynthesisUtterance(text);
     msg.lang = "pl-PL";
-    speechSynthesis.speak(msg);
 
-    setTimeout(() => {
-        e.style.display = "none";
-    }, 8000);
+    msg.onend = () => setTimeout(cb, 10000);
+
+    speechSynthesis.speak(msg);
 }
 
-function checkEAS(data) {
-    let msg = "";
-
-    for (let c of data.cities) {
-        let cur = c.current || {};
-        let h = c.hourly || {};
-
-        let wind = h.wind_speed_10m?.[0] ?? 0;
-        let rain = h.precipitation_probability?.[0] ?? 0;
-        let code = cur.weather_code ?? 0;
-
-        if (code >= 95) msg = "⛈ BURZE NAD POLSKĄ";
-        if (wind > 20) msg = "🌪 SILNY WIATR - ALERT";
-        if (rain > 70) msg = "🌧 INTENSYWNE OPADY - ALERT";
+function loopCities(list, i=0){
+    if(i>=list.length){
+        setTimeout(()=>loopCities(list,0),5000);
+        return;
     }
 
-    if (msg) showEAS(msg);
+    speakCity(list[i], ()=>loopCities(list,i+1));
 }
 
-function buildTTS(data) {
-    let lines = [];
+/* ---------------- MAPA ---------------- */
 
-    data.cities.forEach(c => {
-        let cur = c.current || {};
-        let h = c.hourly || {};
+function renderDots(data){
+    let html="";
 
-        lines.push(
-`${c.name}.
-Temperatura ${cur.temperature_2m ?? "brak"} stopni.
-Wilgotność ${cur.relative_humidity_2m ?? "brak"} procent.
-Odczuwalna ${cur.apparent_temperature ?? "brak"}.
-Wiatr ${h.wind_speed_10m?.[0] ?? 0} metrów na sekundę.
-Zachmurzenie ${cur.cloud_cover ?? 0} procent.
-Ciśnienie ${cur.pressure_msl ?? "brak"}.
-Dzień/Noc ${cur.is_day ? "dzień" : "noc"}.`
-        );
+    data.cities.forEach(c=>{
+        html += `<div class="city-dot" style="left:${c.x*960}px; top:${c.y*960}px;">●</div>`;
     });
 
-    return lines;
+    document.getElementById("dots").innerHTML = html;
 }
 
-function load() {
+/* ---------------- FX ---------------- */
+
+function weatherFX(cities){
+    let fx = document.getElementById("fx");
+
+    let storm=false, rain=false, snow=false;
+
+    cities.forEach(c=>{
+        let w = c.current?.weather_code || 0;
+        let p = c.hourly?.precipitation_probability?.[0] || 0;
+
+        if(w>=95) storm=true;
+        if(p>70) rain=true;
+        if(w>=71 && w<=77) snow=true;
+    });
+
+    fx.className="weatherFX";
+
+    if(storm) fx.classList.add("storm");
+    else if(rain) fx.classList.add("rain");
+    else if(snow) fx.classList.add("snow");
+}
+
+/* ---------------- EAS ---------------- */
+
+function pollEAS(){
+    fetch("/eas")
+    .then(r=>r.json())
+    .then(e=>{
+        if(e.active){
+            let box=document.getElementById("eas");
+            box.style.display="flex";
+            box.innerText=e.message;
+
+            let msg=new SpeechSynthesisUtterance(e.message);
+            speechSynthesis.speak(msg);
+
+            setTimeout(()=>{
+                box.style.display="none";
+                fetch("/eas/reset",{method:"POST"});
+            },8000);
+        }
+    });
+}
+
+setInterval(pollEAS,2000);
+
+/* ---------------- LOAD ---------------- */
+
+function load(){
     fetch("/data")
-        .then(r => r.json())
-        .then(d => {
+    .then(r=>r.json())
+    .then(d=>{
 
-            checkEAS(d);
+        renderDots(d);
+        weatherFX(d.cities);
 
-            document.querySelector("#ticker span").innerText =
-                d.cities.map(c =>
-                    `${c.name}: ${c.current?.temperature_2m ?? "?"}°C`
-                ).join(" | ");
+        document.querySelector("#ticker span").innerText =
+            d.cities.map(c=>`${c.name}: ${c.current?.temperature_2m ?? "?"}°C`).join(" | ");
 
-            document.getElementById("tv").innerHTML =
-                d.cities.map(c =>
-                    `<div class="city">
-                        ${c.name} → ${c.current?.temperature_2m ?? "?"}°C |
-                        Wiatr ${c.hourly?.wind_speed_10m?.[0] ?? 0}
-                    </div>`
-                ).join("");
-
-            let lines = buildTTS(d);
-            speakQueue(lines);
-        });
+        loopCities(d.cities);
+    });
 }
 
-setInterval(load, 120000);
+setInterval(load,120000);
 load();
 
 </script>
