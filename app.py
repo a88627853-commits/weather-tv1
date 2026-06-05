@@ -22,41 +22,36 @@ NAMES = ["Zakopane","Przemyśl","Bielsko-Biała","Kraków","Katowice",
 
 
 def get_city(i):
-    url = "https://api.open-meteo.com/v1/forecast"
-
-    params = {
-        "latitude": LAT[i],
-        "longitude": LON[i],
-        "current": [
-            "temperature_2m",
-            "relative_humidity_2m",
-            "apparent_temperature",
-            "weather_code",
-            "cloud_cover",
-            "pressure_msl",
-            "surface_pressure",
-            "is_day"
-        ],
-        "hourly": [
-            "wind_speed_10m",
-            "wind_gusts_10m",
-            "visibility",
-            "precipitation_probability",
-            "uv_index",
-            "sunshine_duration"
-        ],
-        "daily": [
-            "temperature_2m_max",
-            "temperature_2m_min",
-            "sunrise",
-            "sunset",
-            "weather_code"
-        ],
-        "timezone": "Europe/Warsaw"
-    }
-
     try:
-        r = requests.get(url, params=params, timeout=5).json()
+        r = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": LAT[i],
+                "longitude": LON[i],
+                "current": [
+                    "temperature_2m",
+                    "weather_code",
+                    "cloud_cover",
+                    "pressure_msl",
+                    "surface_pressure",
+                    "is_day"
+                ],
+                "hourly": [
+                    "wind_speed_10m",
+                    "wind_gusts_10m",
+                    "visibility",
+                    "precipitation_probability",
+                    "uv_index"
+                ],
+                "daily": [
+                    "temperature_2m_max",
+                    "temperature_2m_min",
+                    "weather_code"
+                ],
+                "timezone": "Europe/Warsaw"
+            },
+            timeout=5
+        ).json()
 
         return {
             "name": NAMES[i],
@@ -66,10 +61,7 @@ def get_city(i):
         }
 
     except:
-        return {
-            "name": NAMES[i],
-            "error": True
-        }
+        return {"name": NAMES[i], "error": True}
 
 
 @app.route("/")
