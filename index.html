@@ -1,212 +1,216 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>POLAND WEATHER TV</title>
+<title>Weather TV</title>
 
 <style>
-body{
-margin:0;
-background:black;
-color:white;
-font-family:Arial;
-overflow:hidden;
-transition:0.3s;
+body {
+    margin: 0;
+    background: black;
+    color: white;
+    font-family: Arial;
 }
 
-/* TOP BAR */
-#topbar{
-position:fixed;
-top:0;
-left:0;
-width:100%;
-background:#000;
-color:cyan;
-padding:8px;
-font-weight:bold;
-z-index:10;
+#tv {
+    width: 960px;
+    height: 960px;
+    margin: auto;
+    background: #111;
+    overflow: auto;
+    position: relative;
 }
 
-/* MAIN SCREEN */
-#screen{
-padding:50px 20px 40px 20px;
-font-size:16px;
+#ticker {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background: black;
+    color: lime;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
-/* CITY ROW */
-.city{
-padding:6px;
-border-bottom:1px solid #222;
-display:flex;
-justify-content:space-between;
+#ticker span {
+    display: inline-block;
+    padding-left: 100%;
+    animation: scroll 20s linear infinite;
 }
 
-/* NEWS TICKER */
-#ticker{
-position:fixed;
-bottom:0;
-left:0;
-width:100%;
-background:#111;
-color:yellow;
-padding:6px;
-font-size:14px;
-white-space:nowrap;
-overflow:hidden;
-border-top:1px solid #333;
+@keyframes scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
 }
 
-/* ANIMATED ALERT */
-.flash{
-animation: flash 0.4s infinite;
+#eas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: red;
+    color: white;
+    font-size: 50px;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
 }
 
-@keyframes flash{
-0%{background:black;}
-50%{background:darkred;}
-100%{background:black;}
-}
-
-/* FULLSCREEN MODE */
-.fullscreen-btn{
-position:fixed;
-right:10px;
-top:10px;
-background:#222;
-color:white;
-padding:6px;
-cursor:pointer;
-z-index:20;
+#fx {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
 }
 </style>
 </head>
 
 <body>
 
-<div id="topbar">📺 POLAND WEATHER TV | LIVE BROADCAST</div>
-<div id="screen"></div>
-<div id="ticker">LOADING WEATHER DATA...</div>
+<button onclick="document.documentElement.requestFullscreen()">FULLSCREEN</button>
 
-<div class="fullscreen-btn" onclick="goFull()">FULLSCREEN</div>
+<div id="tv"></div>
+
+<div id="ticker"><span>LOADING...</span></div>
+
+<div id="eas"></div>
+
+<canvas id="fx"></canvas>
 
 <script>
 
+const fx = document.getElementById("fx");
+const ctx = fx.getContext("2d");
+
+fx.width = window.innerWidth;
+fx.height = window.innerHeight;
+
 let lastSpeak = "";
-let alertMode = false;
 
-/* 🔊 TTS */
-function speak(text){
-  if(text === lastSpeak) return;
-  lastSpeak = text;
+function speakQueue(lines, i = 0) {
+    if (i >= lines.length) return;
 
-  let u = new SpeechSynthesisUtterance(text);
-  u.lang = "pl-PL";
-  u.rate = 0.95;
+    let msg = new SpeechSynthesisUtterance(lines[i]);
+    msg.lang = "pl-PL";
+    msg.rate = 1;
 
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
+    msg.onend = () => {
+        setTimeout(() => speakQueue(lines, i + 1), 400);
+    };
+
+    speechSynthesis.speak(msg);
 }
 
-/* 🔊 EAS SOUND */
-function playEAS(){
-  let ctx = new (window.AudioContext || window.webkitAudioContext)();
+function showEAS(text) {
+    let e = document.getElementById("eas");
+    e.style.display = "flex";
+    e.innerText = text;
 
-  let o1 = ctx.createOscillator();
-  let o2 = ctx.createOscillator();
-  let g = ctx.createGain();
+    let msg = new SpeechSynthesisUtterance(text);
+    msg.lang = "pl-PL";
+    speechSynthesis.speak(msg);
 
-  o1.frequency.value = 853;
-  o2.frequency.value = 960;
-
-  g.gain.value = 0.07;
-
-  o1.connect(g);
-  o2.connect(g);
-  g.connect(ctx.destination);
-
-  o1.start();
-  o2.start();
-
-  setTimeout(() => {
-    o1.stop();
-    o2.stop();
-    ctx.close();
-  }, 1200);
+    setTimeout(() => e.style.display = "none", 8000);
 }
 
-/* 📺 RENDER TV */
-function render(data){
+function ticker(data) {
+    let text = data.cities.map(c =>
+        `${c.name}: ${c.current?.temperature_2m ?? "?"}°C`
+    ).join(" | ");
 
-  let html = "";
-  let alert = false;
+    document.querySelector("#ticker span").innerText = text;
+}
 
-  data.cities.forEach(c => {
+function checkEAS(data) {
+    let msg = "";
 
-    html += `
-      <div class="city">
-        <div>${c.name}</div>
-        <div>🌡 ${Math.round(c.weather.temperature_2m)}°C</div>
-        <div>💨 ${Math.round(c.weather.wind_speed_10m)} m/s</div>
-        <div>⚠ ${c.eas}</div>
-      </div>
-    `;
+    for (let c of data.cities) {
+        let cur = c.current || {};
+        let h = c.hourly || {};
 
-    if(c.eas === "HIGH" || c.eas === "EXTREME"){
-      alert = true;
-    }
-  });
+        let wind = h.wind_speed_10m?.[0] ?? 0;
+        let rain = h.precipitation_probability?.[0] ?? 0;
+        let code = cur.weather_code ?? 0;
 
-  document.getElementById("screen").innerHTML = html;
-
-  /* 🔴 ALERT MODE */
-  if(alert){
-    document.body.classList.add("flash");
-    document.getElementById("ticker").innerText =
-      "⚠ BREAKING WEATHER ALERT - SEVERE CONDITIONS IN POLAND";
-
-    if(!alertMode){
-      playEAS();
-      speak("ALERT METEOROLOGICZNY. SYSTEM EMERGENCY ACTIVE.");
-      alertMode = true;
+        if (code >= 95) msg = "⛈ BURZE NAD POLSKĄ - ALERT EAS";
+        if (wind > 20) msg = "🌪 SILNE WIATRY - ALERT EAS";
+        if (rain > 70) msg = "🌧 INTENSYWNE OPADY - ALERT EAS";
     }
 
-  } else {
-    document.body.classList.remove("flash");
-    document.getElementById("ticker").innerText =
-      "POLAND WEATHER TV - LIVE WEATHER BROADCAST";
-    alertMode = false;
-  }
-
-  /* 🗣 voice */
-  if(data.cities.length > 0){
-    speak(
-      data.cities[0].name +
-      " temperatura " +
-      Math.round(data.cities[0].weather.temperature_2m) +
-      " stopni. alert " +
-      data.cities[0].eas
-    );
-  }
+    if (msg) showEAS(msg);
 }
 
-/* 📡 LOAD */
-async function load(){
-  try {
-    let res = await fetch("http://192.168.100.239:5000/data");
-    let data = await res.json();
-    render(data);
-  } catch(e){
-    console.log("API ERROR", e);
-  }
+function weatherFX(code) {
+    ctx.clearRect(0,0,fx.width,fx.height);
+
+    if (code >= 95) {
+        if (Math.random() > 0.85)
+            ctx.fillRect(Math.random()*fx.width, Math.random()*fx.height, 200, 2);
+    }
+    else if (code >= 61) {
+        for (let i=0;i<80;i++)
+            ctx.fillRect(Math.random()*fx.width, Math.random()*fx.height, 2, 10);
+    }
+    else if (code >= 71) {
+        for (let i=0;i<60;i++) {
+            ctx.beginPath();
+            ctx.arc(Math.random()*fx.width, Math.random()*fx.height, 3, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
 }
 
-setInterval(load, 5000);
+function buildTTS(data) {
+    let lines = [];
+
+    data.cities.forEach(c => {
+
+        let cur = c.current || {};
+        let h = c.hourly || {};
+
+        lines.push(
+`${c.name}. Temperatura ${cur.temperature_2m ?? "brak"} stopni. 
+Wilgotność ${cur.relative_humidity_2m ?? "brak"} procent. 
+Odczuwalna ${cur.apparent_temperature ?? "brak"}. 
+Wiatr ${h.wind_speed_10m?.[0] ?? 0} metrów na sekundę. 
+Zachmurzenie ${cur.cloud_cover ?? 0} procent. 
+Ciśnienie ${cur.pressure_msl ?? "brak"}. 
+Widoczność ${cur.visibility ?? "brak"}. 
+Opady ${h.precipitation?.[0] ?? 0}. Szansa ${h.precipitation_probability?.[0] ?? 0} procent. 
+Śnieg ${h.snow_depth?.[0] ?? 0}. 
+UV ${h.uv_index?.[0] ?? 0}. 
+Dzień/noc ${cur.is_day ? "dzień" : "noc"}.`
+        );
+    });
+
+    return lines;
+}
+
+function load() {
+    fetch("/data")
+        .then(r => r.json())
+        .then(d => {
+
+            ticker(d);
+            checkEAS(d);
+
+            let main = d.cities[13];
+
+            weatherFX(main.current?.weather_code || 0);
+
+            speakQueue(buildTTS(d));
+
+            document.getElementById("tv").innerHTML =
+                d.cities.map(c =>
+                    `<div>${c.name} | ${c.current?.temperature_2m ?? "?"}°C</div>`
+                ).join("");
+        });
+}
+
+setInterval(load, 60000);
 load();
-
-/* 🖥 FULLSCREEN */
-function goFull(){
-  document.documentElement.requestFullscreen();
-}
 
 </script>
 
