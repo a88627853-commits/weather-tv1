@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, send_from_directory
 import requests
 
 app = Flask(__name__)
@@ -68,13 +68,21 @@ def get_city(i):
             "daily": r.get("daily", {})
         }
 
-    except:
-        return {"name": NAMES[i], "error": True}
+    except Exception as e:
+        print("CITY ERROR:", i, e)
+        return {
+            "name": NAMES[i],
+            "error": True,
+            "current": {},
+            "hourly": {},
+            "daily": {}
+        }
 
 
+# 📺 FRONTEND BEZ TEMPLATES
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return send_from_directory(".", "index.html")
 
 
 @app.route("/data")
