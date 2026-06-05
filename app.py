@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_file
 import requests
 
 app = Flask(__name__)
@@ -21,12 +21,14 @@ NAMES = ["Zakopane","Przemyśl","Bielsko-Biała","Kraków","Katowice",
          "Gdańsk","Gdynia"]
 
 
+# 🌦️ pobieranie danych
 def get_city(i):
     url = "https://api.open-meteo.com/v1/forecast"
 
     params = {
         "latitude": LAT[i],
         "longitude": LON[i],
+
         "current": [
             "temperature_2m",
             "relative_humidity_2m",
@@ -39,37 +41,37 @@ def get_city(i):
             "wind_speed_10m",
             "visibility"
         ],
+
         "hourly": [
             "wind_speed_10m",
             "precipitation_probability",
             "precipitation",
-            "snow_depth",
-            "uv_index",
-            "uv_index_clear_sky",
-            "sunshine_duration",
-            "cloud_cover"
+            "snow_depth"
         ],
+
         "daily": [
             "temperature_2m_max",
             "temperature_2m_min",
             "sunrise",
             "sunset"
         ],
+
         "timezone": "Europe/Warsaw"
     }
 
     try:
-        r = requests.get(url, params=params, timeout=5).json()
+        r = requests.get(url, params=params, timeout=5)
+        data = r.json()
 
         return {
             "name": NAMES[i],
-            "current": r.get("current", {}),
-            "hourly": r.get("hourly", {}),
-            "daily": r.get("daily", {})
+            "current": data.get("current", {}),
+            "hourly": data.get("hourly", {}),
+            "daily": data.get("daily", {})
         }
 
     except Exception as e:
-        print("CITY ERROR:", i, e)
+        print("ERROR:", NAMES[i], e)
         return {
             "name": NAMES[i],
             "error": True,
@@ -79,12 +81,7 @@ def get_city(i):
         }
 
 
-# 📺 FRONTEND BEZ TEMPLATES
-@app.route("/")
-def home():
-    return send_from_directory(".", "index.html")
-
-
+# 📡 API
 @app.route("/data")
 def data():
     return jsonify({
@@ -92,11 +89,19 @@ def data():
     })
 
 
+# 🗺️ STATYCZNA MAPA PNG (OPCJA 1)
+@app.route("/map.png")
+def map_png():
+    return send_file("map.png", mimetype="image/png")
+
+
+# 🚨 ESP32 EAS TEST
 @app.route("/eas/test", methods=["POST"])
 def eas():
-    print("🔥 EAS TRIGGER")
+    print("🔥 EAS TRIGGER FROM ESP32")
     return jsonify({"status": "OK"})
 
 
+# 🟢 START
 if __name__ == "__main__":
-    app.run(host="0.0.0.0")
+    app.run(host="0.0.0.0", port=10000)
