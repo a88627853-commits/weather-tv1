@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, send_file
+from flask import Flask, jsonify, render_template
 import requests
 
 app = Flask(__name__)
@@ -20,8 +20,9 @@ NAMES = ["Zakopane","Przemyśl","Bielsko-Biała","Kraków","Katowice",
          "Augustów","Suwałki","Świnoujście","Kołobrzeg","Koszalin",
          "Gdańsk","Gdynia"]
 
+EAS_ACTIVE = False
+EAS_MESSAGE = ""
 
-# 🌦️ pobieranie danych
 def get_city(i):
     url = "https://api.open-meteo.com/v1/forecast"
 
@@ -43,13 +44,27 @@ def get_city(i):
         ],
 
         "hourly": [
-            "wind_speed_10m",
+            "temperature_2m",
+            "relative_humidity_2m",
+            "apparent_temperature",
             "precipitation_probability",
             "precipitation",
-            "snow_depth"
+            "snow_depth",
+            "wind_speed_10m",
+            "wind_speed_80m",
+            "wind_direction_10m",
+            "wind_gusts_10m",
+            "visibility",
+            "cloud_cover",
+            "weather_code",
+            "pressure_msl",
+            "uv_index",
+            "uv_index_clear_sky",
+            "sunshine_duration"
         ],
 
         "daily": [
+            "weather_code",
             "temperature_2m_max",
             "temperature_2m_min",
             "sunrise",
@@ -59,49 +74,40 @@ def get_city(i):
         "timezone": "Europe/Warsaw"
     }
 
-    try:
-        r = requests.get(url, params=params, timeout=5)
-        data = r.json()
+    r = requests.get(url, params=params, timeout=8).json()
 
-        return {
-            "name": NAMES[i],
-            "current": data.get("current", {}),
-            "hourly": data.get("hourly", {}),
-            "daily": data.get("daily", {})
-        }
+    return {
+        "name": NAMES[i],
+        "current": r.get("current", {}),
+        "hourly": r.get("hourly", {}),
+        "daily": r.get("daily", {})
+    }
 
-    except Exception as e:
-        print("ERROR:", NAMES[i], e)
-        return {
-            "name": NAMES[i],
-            "error": True,
-            "current": {},
-            "hourly": {},
-            "daily": {}
-        }
+@app.route("/")
+def home():
+    return render_template("index.html")
 
-
-# 📡 API
 @app.route("/data")
 def data():
-    return jsonify({
-        "cities": [get_city(i) for i in range(len(NAMES))]
-    })
+    return jsonify({"cities": [get_city(i) for i in range(len(NAMES))]})
 
-
-# 🗺️ STATYCZNA MAPA PNG (OPCJA 1)
-@app.route("/map.png")
-def map_png():
-    return send_file("map.png", mimetype="image/png")
-
-
-# 🚨 ESP32 EAS TEST
 @app.route("/eas/test", methods=["POST"])
+def eas_test():
+    global EAS_ACTIVE, EAS_MESSAGE
+    EAS_ACTIVE = True
+    EAS_MESSAGE = "⚠ EAS TEST SIGNAL FROM ESP32 ⚠"
+    return jsonify({"ok": True})
+
+@app.route("/eas")
 def eas():
-    print("🔥 EAS TRIGGER FROM ESP32")
-    return jsonify({"status": "OK"})
+    return jsonify({"active": EAS_ACTIVE, "message": EAS_MESSAGE})
 
+@app.route("/eas/reset", methods=["POST"])
+def reset():
+    global EAS_ACTIVE, EAS_MESSAGE
+    EAS_ACTIVE = False
+    EAS_MESSAGE = ""
+    return jsonify({"ok": True})
 
-# 🟢 START
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=5000)
